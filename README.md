@@ -24,7 +24,7 @@ Unlike typical web frameworks, this project implements the core networking layer
  [Worker Thread] [Worker Thread] [Worker Thread]
        |             |             |
     [Parse HTTP]  [Read File]   [Send Response]
-
+```
 
 ## Build Instructions
 
