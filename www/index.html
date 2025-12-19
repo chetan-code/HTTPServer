@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="style.css">
+    <title>C++ Message Board</title>
+</head>
+<body>
+    <h1>The C++ Wall</h1>
+    
+    <div class="post-box">
+        <form action="/api/message" method="POST">
+            <input type="text" name="content" placeholder="Type a message..." required>
+            <input type="submit" value="Post">
+        </form>
+    </div>
+
+    <hr>
+
+    <div class="messages">
+        <h3>Recent Messages:</h3>
+        ###
+        </div>
+</body>
+</html>

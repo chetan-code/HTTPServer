@@ -1,0 +1,11 @@
+# Ignore the Build folder
+build/
+
+# Ignore compiled files
+*.exe
+*.obj
+*.pdb
+*.user
+*.vcxproj
+*.sln
+.vs/
