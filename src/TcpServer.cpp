@@ -181,117 +181,123 @@ void TcpServer::saveMessage(const std::string& message) const {
 void TcpServer::handleClient(SOCKET clientSocket) {
   char buffer[4096];
   ZeroMemory(buffer, 4096);  // window specific used to clear junk
-  int bytesRecieved = recv(clientSocket, buffer, 4096, 0);
-  if (bytesRecieved <= 0) {
-    std::cerr << "Not bytes recieved in request";
-    closesocket(clientSocket);
-    return;
-  }
-  std::string request(buffer,
-                      bytesRecieved);  // char* do not end with /0 we
-                                       // need to convert it into string
-  auto [method, path] = parseRequest(request);
+                             // Set a 5-second timeout on recv.
+  // If the client is silent for 5s, recv will fail and we will close the
+  // connection.
+  DWORD timeout = 5000;  // 5000 milliseconds
+  setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout,
+             sizeof(timeout));
+  BOOL nodelay = TRUE;
+  setsockopt(clientSocket, IPPROTO_TCP, TCP_NODELAY, (const char*)&nodelay,
+             sizeof(nodelay));
+  int bytesRecieved;
+  while ((bytesRecieved = recv(clientSocket, buffer, 4096, 0)) > 0) {
+    std::string request(buffer,
+                        bytesRecieved);  // char* do not end with /0 we
+                                         // need to convert it into string
+    auto [method, path] = parseRequest(request);
 
-  std::string responseBody;
-  std::string contentType = "text/html";
-  int statusCode = 200;
-  // POST request
-  if (method == "POST" && path == "/api/message") {
-    // get content form the body
-    std::string body = getRequestBody(request);
-    auto keyValues = parseBody(body);
-    // if has a message with key "content"
-    if (keyValues.count("content")) {
-      // we decode to remove + %12
-      std::string message = urlDecode(keyValues["content"]);
-      // add it to database but make sure we avoid race condition
-      {
-        // this is to make sure not 2 thread push at same index
-        std::lock_guard lock(msgMtx);
-        msgBoard.push_back(message);
-      }
-      saveMessage(message);
-    }
-    responseBody =
-        "<html><body><h1>Posted!</h1><a href='/'>Go Back</a></body></html>";
-    contentType = "text/html";
-  } else if (method == "POST" && path == "/api/login") {
-    // extract payload
-    std::string body = getRequestBody(request);
-    std::cout << "recieved login data : " << body << "\n";
-    // parse body and get the data
-    auto mapData = parseBody(body);
-    std::string username = mapData["username"];
-    std::string password = mapData["password"];
-    if (username == "chetan" && password == "password") {
-      // dummy response
-      responseBody =
-          "<html><h1>Login success .Welcome " + username + "</h1></html>";
-    } else {
-      // dummy response
-      responseBody =
-          "<html><h1>Login failed invalid username and password</h1></html>";
-    }
-
-    contentType = "text/html";
-  } else {
-    // GET request and routing
-    if (path == "/" || path == "/index.html") {
-      // to display message
-      std::string messages = "<ul>";  // tag used to start and end list
-      // make sure to avoid race condtion while reading the vector
-      {
-        std::lock_guard lock(msgMtx);
-        for (const std::string& msg : msgBoard) {
-          messages += "<li>" + msg + "</li>";
+    std::string responseBody;
+    std::string contentType = "text/html";
+    int statusCode = 200;
+    // POST request
+    if (method == "POST" && path == "/api/message") {
+      // get content form the body
+      std::string body = getRequestBody(request);
+      auto keyValues = parseBody(body);
+      // if has a message with key "content"
+      if (keyValues.count("content")) {
+        // we decode to remove + %12
+        std::string message = urlDecode(keyValues["content"]);
+        // add it to database but make sure we avoid race condition
+        {
+          // this is to make sure not 2 thread push at same index
+          std::lock_guard lock(msgMtx);
+          msgBoard.push_back(message);
         }
-        // end the html tag
-        messages += "</ul>";
+        saveMessage(message);
       }
-      path = "/index.html";
-      std::string fullpath = "www" + path;
-      std::ifstream file(fullpath, std::ios::in | std::ios::binary);
-      // read the file and replace the placeholder with our message text
-      if (file.is_open()) {
-        std::cerr << "File is found at : " << fullpath << "\n";
-        std::ostringstream outStream;
-        outStream << file.rdbuf();
-        std::string html = outStream.str();
-        // find the placeholder in the html text and replce it
-        std::string placeHolderText = "###";
-        size_t placeHolderPos = html.find(placeHolderText);
-        if (placeHolderPos != std::string::npos) {
-          // replace place holder text with new messages;
-          html.replace(placeHolderPos, placeHolderText.size(), messages);
-        }
-        responseBody = html;
-        contentType = getMimeType(path);
-      }
-    } else {
-      if (path == "/api/data") {
-        contentType = "application/json";
-        responseBody = "{ \"id\": 1, \"name\": \"C++ Server\" }";
+      responseBody =
+          "<html><body><h1>Posted!</h1><a href='/'>Go Back</a></body></html>";
+      contentType = "text/html";
+    } else if (method == "POST" && path == "/api/login") {
+      // extract payload
+      std::string body = getRequestBody(request);
+      // std::cout << "recieved login data : " << body << "\n";
+      //  parse body and get the data
+      auto mapData = parseBody(body);
+      std::string username = mapData["username"];
+      std::string password = mapData["password"];
+      if (username == "chetan" && password == "password") {
+        // dummy response
+        responseBody =
+            "<html><h1>Login success .Welcome " + username + "</h1></html>";
       } else {
-        statusCode = 404;
-        responseBody = "<html><h1>404 Not Found</h1></html>";
+        // dummy response
+        responseBody =
+            "<html><h1>Login failed invalid username and password</h1></html>";
+      }
+
+      contentType = "text/html";
+    } else {
+      // GET request and routing
+      if (path == "/" || path == "/index.html") {
+        // to display message
+        std::string messages = "<ul>";  // tag used to start and end list
+        // make sure to avoid race condtion while reading the vector
+        {
+          std::lock_guard lock(msgMtx);
+          for (const std::string& msg : msgBoard) {
+            messages += "<li>" + msg + "</li>";
+          }
+          // end the html tag
+          messages += "</ul>";
+        }
+        path = "/index.html";
+        std::string fullpath = "www" + path;
+        std::ifstream file(fullpath, std::ios::in | std::ios::binary);
+        // read the file and replace the placeholder with our message text
+        if (file.is_open()) {
+          // std::cout << "File is found at : " << fullpath << "\n";
+          std::ostringstream outStream;
+          outStream << file.rdbuf();
+          std::string html = outStream.str();
+          // find the placeholder in the html text and replce it
+          std::string placeHolderText = "###";
+          size_t placeHolderPos = html.find(placeHolderText);
+          if (placeHolderPos != std::string::npos) {
+            // replace place holder text with new messages;
+            html.replace(placeHolderPos, placeHolderText.size(), messages);
+          }
+          responseBody = html;
+          contentType = getMimeType(path);
+        }
+      } else {
+        if (path == "/api/data") {
+          contentType = "application/json";
+          responseBody = "{ \"id\": 1, \"name\": \"C++ Server\" }";
+        } else {
+          statusCode = 404;
+          responseBody = "<html><h1>404 Not Found</h1></html>";
+        }
       }
     }
-  }
-  // standard http response for head => body is just appended after this
-  std::string responseHeader = "HTTP/1.1 " + std::to_string(statusCode) +
-                               " OK\r\n"
-                               "Content-Type:" +
-                               contentType +
-                               "\r\n"
-                               "Content-Length: " +
-                               std::to_string(responseBody.size()) +
-                               "\r\n"
-                               "\r\n";  // end of header
+    // standard http response for head => body is just appended after this
+    std::string responseHeader = "HTTP/1.1 " + std::to_string(statusCode) +
+                                 " OK\r\n"
+                                 "Content-Type:" +
+                                 contentType +
+                                 "\r\n"
+                                 "Content-Length: " +
+                                 std::to_string(responseBody.size()) + "\r\n" +
+                                 "Connection: keep-alive\r\n" +
+                                 "\r\n";  // end of header
 
-  // send header first
-  send(clientSocket, responseHeader.c_str(), responseHeader.size(), 0);
-  // send body after
-  send(clientSocket, responseBody.data(), responseBody.size(), 0);
-  std::cout << "handle client success : thread ran successfully!" << "\n";
+    // COMBINE THEM
+    std::string fullResponse = responseHeader + responseBody;
+    // send header first
+    send(clientSocket, fullResponse.c_str(), fullResponse.size(), 0);
+  }
+  // std::cout << "handle client success : thread ran successfully!" << "\n";
   closesocket(clientSocket);
 }

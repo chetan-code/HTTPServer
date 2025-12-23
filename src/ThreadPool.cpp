@@ -30,7 +30,7 @@ void ThreadPool::enqueue(std::function<void()> task) {
     std::lock_guard lock(taskMtx);
     tasks.push(task);
     condition.notify_one();
-    std::cout << "Added new request to queue" << "\n";
+    // std::cout << "Added new request to queue" << "\n";
   }
 }
 ThreadPool::~ThreadPool() {
